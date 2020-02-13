@@ -7,20 +7,20 @@ class IndexController{
 	private $time;
 
 	function __construct(){
-		//»ñÈ¡Â·¾¶ºÍÎÄ¼şÃû
-		$paths = explode('/', $_GET['path']);
+		//è·å–è·¯å¾„å’Œæ–‡ä»¶å
+		$paths = explode('/', rawurldecode($_GET['path']));
 		if(substr($_SERVER['REQUEST_URI'], -1) != '/'){
-			$this->name = urldecode(array_pop($paths));
+			$this->name = array_pop($paths);
 		}
-		$this->url_path = get_absolute_path(implode('/', $paths));
-		$this->path = config('onedrive_root').$this->url_path;
-		//»ñÈ¡ÎÄ¼ş¼ĞÏÂËùÓĞÔªËØ
+		$this->url_path = get_absolute_path(join('/', $paths));
+		$this->path = get_absolute_path(config('onedrive_root').$this->url_path);
+		//è·å–æ–‡ä»¶å¤¹ä¸‹æ‰€æœ‰å…ƒç´ 
 		$this->items = $this->items($this->path);
 	}
 
 	
 	function index(){
-		//ÊÇ·ñ404
+		//æ˜¯å¦404
 		$this->is404();
 
 		$this->is_password();
@@ -36,15 +36,19 @@ class IndexController{
 		}
 	}
 
-	//ÅĞ¶ÏÊÇ·ñ¼ÓÃÜ
+	//åˆ¤æ–­æ˜¯å¦åŠ å¯†
 	function is_password(){
 		if(empty($this->items['.password'])){
 			return false;
-		}
+		}else{
+			$this->items['.password']['path'] = get_absolute_path($this->path).'.password';
+ 		}
 		
 		$password = $this->get_content($this->items['.password']);
+		list($password) = explode("\n",$password);
+		$password = trim($password);
 		unset($this->items['.password']);
-		if(!empty($password) && $password == $_COOKIE[md5($this->path)]){
+		if(!empty($password) && strcmp($password, $_COOKIE[md5($this->path)]) === 0){
 			return true;
 		}
 
@@ -53,7 +57,7 @@ class IndexController{
 	}
 
 	function password($password){
-		if(!empty($_POST['password']) && $password == $_POST['password']){
+		if(!empty($_POST['password']) && strcmp($password, $_POST['password']) === 0){
 			setcookie(md5($this->path), $_POST['password']);
 			return true;
 		}
@@ -62,16 +66,16 @@ class IndexController{
 		exit();
 	}
 
-	//ÎÄ¼ş
+	//æ–‡ä»¶
 	function file(){
 		$item = $this->items[$this->name];
-		if ($item['folder']) {//ÊÇÎÄ¼ş¼Ğ
+		if ($item['folder']) {//æ˜¯æ–‡ä»¶å¤¹
 			$url = $_SERVER['REQUEST_URI'].'/';
-		}elseif(!is_null($_GET['t']) && !empty($item['thumbnails'])){//ËõÂÔÍ¼
+		}elseif(!is_null($_GET['t']) ){//ç¼©ç•¥å›¾
 			$url = $this->thumbnail($item);
 		}elseif($_SERVER['REQUEST_METHOD'] == 'POST' || !is_null($_GET['s']) ){
 			return $this->show($item);
-		}else{//·µ»ØÏÂÔØÁ´½Ó
+		}else{//è¿”å›ä¸‹è½½é“¾æ¥
 			$url = $item['downloadUrl'];
 		}
 		header('Location: '.$url);
@@ -79,30 +83,39 @@ class IndexController{
 
 
 	
-	//ÎÄ¼ş¼Ğ
+	//æ–‡ä»¶å¤¹
 	function dir(){
 		$root = get_absolute_path(dirname($_SERVER['SCRIPT_NAME'])).config('root_path');
 		$navs = $this->navs();
 
+		if($this->items['index.html']){
+			$this->items['index.html']['path'] = get_absolute_path($this->path).'index.html';
+			$index = $this->get_content($this->items['index.html']);
+			header('Content-type: text/html');
+			echo $index;
+			exit();
+		}
+
 		if($this->items['README.md']){
+			$this->items['README.md']['path'] = get_absolute_path($this->path).'README.md';
 			$readme = $this->get_content($this->items['README.md']);
 			$Parsedown = new Parsedown();
 			$readme = $Parsedown->text($readme);
-			//²»ÔÚÁĞ±íÖĞÕ¹Ê¾
+			//ä¸åœ¨åˆ—è¡¨ä¸­å±•ç¤º
 			unset($this->items['README.md']);
 		}
 
 		if($this->items['HEAD.md']){
+			$this->items['HEAD.md']['path'] = get_absolute_path($this->path).'HEAD.md';
 			$head = $this->get_content($this->items['HEAD.md']);
 			$Parsedown = new Parsedown();
 			$head = $Parsedown->text($head);
-			//²»ÔÚÁĞ±íÖĞÕ¹Ê¾
+			//ä¸åœ¨åˆ—è¡¨ä¸­å±•ç¤º
 			unset($this->items['HEAD.md']);
 		}
-		
-		return view::load('list')->with('title', 'one index of '. urldecode($this->url_path))
+		return view::load('list')->with('title', 'index of '. urldecode($this->url_path))
 					->with('navs', $navs)
-					->with('path',$this->url_path)
+					->with('path',join("/", array_map("rawurlencode", explode("/", $this->url_path)))  )
 					->with('root', $root)
 					->with('items', $this->items)
 					->with('head',$head)
@@ -110,56 +123,46 @@ class IndexController{
 	}
 
 	function show($item){
-		$root = get_absolute_path(dirname($_SERVER['SCRIPT_NAME'])).config('root_path');
+		$root = get_absolute_path(dirname($_SERVER['SCRIPT_NAME'])).(config('root_path')?'?/':'');
 		$ext = strtolower(pathinfo($item['name'], PATHINFO_EXTENSION));
 		$data['title'] = $item['name'];
 		$data['navs'] = $this->navs();
 		$data['item'] = $item;
-		$data['url'] = (isset($_SERVER['HTTPS'])?'https://':'http://').$_SERVER['HTTP_HOST'].end($data['navs']);
+		$data['ext'] = $ext;
+		$data['item']['path'] = get_absolute_path($this->path).$this->name;
+		$http_type = ((isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] == 'on') || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] == 'https')) ? 'https://' : 'http://';
+		$uri = onedrive::urlencode(get_absolute_path($this->url_path.'/'.$this->name));
+		$data['url'] = $http_type.$_SERVER['HTTP_HOST'].$root.$uri;
 		
-		if(in_array($ext,['bmp','jpg','jpeg','png','gif'])){
-			return view::load('show/image')->with($data);
-		}
-		if(in_array($ext,['mp4'])){
-			return view::load('show/video')->with($data);
-		}
-		if(in_array($ext,['ogg','mp3','wav'])){
-			return view::load('show/audio')->with($data);
-		}
 
-		$code_type = $this->code_type($ext);
-		if($code_type){
-			$data['content'] = $this->get_content($item);
-			$data['language'] = $code_type;
-			
-			return view::load('show/code')->with($data);
+		$show = config('show');
+		foreach($show as $n=>$exts){
+			if(in_array($ext,$exts)){
+				return view::load('show/'.$n)->with($data);
+			}
 		}
 
 		header('Location: '.$item['downloadUrl']);
 	}
-	//ËõÂÔÍ¼
+	//ç¼©ç•¥å›¾
 	function thumbnail($item){
-		$url = $item['thumbnails'][0]['large']['url'];
 		if(!empty($_GET['t'])){
 			list($width, $height) = explode('|', $_GET['t']);
-			list($url, $tmp) = explode("&width=",$url);
-			$url = $url."&width={$width}&height={$height}";
+		}else{
+			//800 176 96
+			$width = $height = 800;
 		}
-		return $url;
+		$item['thumb'] = onedrive::thumbnail($this->path.$this->name);
+		list($item['thumb'],$tmp) = explode('&width=', $item['thumb']);
+		$item['thumb'] .= strpos($item['thumb'], '?')?'&':'?';
+		return $item['thumb']."width={$width}&height={$height}";
 	}
 
-	//ÎÄ¼ş¼ĞÏÂÔªËØ
+	//æ–‡ä»¶å¤¹ä¸‹å…ƒç´ 
 	function items($path, $fetch=false){
-		//ÊÇ·ñÓĞ»º´æ
-		list($this->time, $items) = cache('dir_'.$this->path);
-		//»º´æÊ§Ğ§»òÎÄ¼ş²»´æÔÚ£¬ÖØĞÂ×¥È¡
-		if( !is_array($items) || (TIME - $this->time) > config('cache_expire_time') || $fetch){
-			$items = onedrive::dir($path);
-			if(is_array($items)){
-				$this->time = TIME;
-				cache('dir_'.$path, $items);
-			} 
-		}
+		$items = cache::get('dir_'.$this->path, function(){
+			return onedrive::dir($this->path);
+		}, config('cache_expire_time'));
 		return $items;
 	}
 
@@ -170,7 +173,7 @@ class IndexController{
 			if(empty($v)){
 				continue;
 			}
-			$navs[urldecode($v)] = end($navs).$v.'/';
+			$navs[rawurldecode($v)] = end($navs).$v.'/';
 		}
 		if(!empty($this->name)){
 			$navs[$this->name] = end($navs).urlencode($this->name);
@@ -179,43 +182,22 @@ class IndexController{
 		return $navs;
 	}
 
-	function get_content($item){
-		$path =  $this->path.$item['name'];
-		list($time, $content) = cache('content_'.$path);
-		if( is_null($content) || (TIME - $time) > config('cache_expire_time')){
+	static function get_content($item){
+		$content = cache::get('content_'.$item['path'], function() use ($item){
 			$resp = fetch::get($item['downloadUrl']);
 			if($resp->http_code == 200){
-				$content = $resp->content;
-				cache('content_'.$path, $content);
+				return $resp->content;
 			}
-		}
+		}, config('cache_expire_time') );
 		return $content;
 	}
 
-	function code_type($ext){
-		$code_type['html'] = 'html';
-		$code_type['htm'] = 'html';
-		$code_type['php'] = 'php';
-		$code_type['css'] = 'css';
-		$code_type['go'] = 'golang';
-		$code_type['java'] = 'java';
-		$code_type['js'] = 'javascript';
-		$code_type['json'] = 'json';
-		$code_type['txt'] = 'Text';
-		$code_type['sh'] = 'sh';
-		$code_type['md'] = 'Markdown';
-		
-		return @$code_type[$ext];
-	}
-
-	//Ê±ºò404
+	//æ—¶å€™404
 	function is404(){
 		if(!empty($this->items[$this->name]) || (empty($this->name) && is_array($this->items)) ){
 			return false;
 		}
 
-		cache('404_'.$this->path.$this->name, true);
-		
 		http_response_code(404);
 		view::load('404')->show();
 		die();
@@ -224,14 +206,6 @@ class IndexController{
 	function __destruct(){
 		if (!function_exists("fastcgi_finish_request")) {
 			return;
-		}
-		//ºóÌ¨Ë¢ĞÂ»º´æ
-		if((TIME - $this->time) > config('cache_refresh_time')){
-			fastcgi_finish_request();
-			$items = onedrive::dir($this->path);
-			if(is_array($items)){
-				cache('dir_'.$this->path, $items);
-			}
 		}
 	}
 }

@@ -1,9 +1,18 @@
 <?php view::layout('layout')?>
-<?php
+
+<?php 
+//仅支持教育版和企业版
+if(strpos($item['downloadUrl'],"sharepoint.com") == false){
+	header('Location: '.$item['downloadUrl']);exit();
+}
 $item['thumb'] = onedrive::thumbnail($item['path']);
+$mpd =  str_replace("thumbnail","videomanifest",$item['thumb'])."&part=index&format=dash&useScf=True&pretranscode=0&transcodeahead=0";
 ?>
+
 <?php view::begin('content');?>
 <link class="dplayer-css" rel="stylesheet" href="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.css">
+<script src="https://cdn.jsdelivr.net/npm/dashjs/dist/dash.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
 <div class="mdui-container-fluid">
 	<br>
 	<div id="dplayer"></div>
@@ -18,16 +27,14 @@ $item['thumb'] = onedrive::thumbnail($item['path']);
 	  <textarea class="mdui-textfield-input"><video><source src="<?php e($url);?>" type="video/mp4"></video></textarea>
 	</div>
 </div>
-<?php if(pathinfo($item["name"], PATHINFO_EXTENSION) === 'flv') { e('<script src="https://cdn.jsdelivr.net/npm/flv.js/dist/flv.min.js"></script>'); } ?>
-<script src="https://cdn.jsdelivr.net/npm/dplayer/dist/DPlayer.min.js"></script>
 <script>
 const dp = new DPlayer({
 	container: document.getElementById('dplayer'),
 	lang:'zh-cn',
 	video: {
-	    url: '<?php e($item['downloadUrl']);?>',
+	    url: '<?php echo $mpd;?>',
 	    pic: '<?php @e($item['thumb']);?>',
-	    type: '<?php e((pathinfo($item["name"], PATHINFO_EXTENSION) === 'flv') ? 'flv' : 'auto'); ?>'
+	    type: 'dash'
 	}
 });
 </script>
